@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -I./inc
 
-SRC = src/main.c src/math_ops.c src/hmi.c
+SRC = main.c src/math_ops.c src/hmi.c
 OBJ = $(SRC:.c=.o)
 TARGET = dynamox_app.exe
 
@@ -10,5 +10,11 @@ all: $(TARGET)
 $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
+$(OBJ): $(wildcard inc/*.h)
+
 clean:
-	rm -f src/*.o $(TARGET)
+ifeq ($(OS),Windows_NT)
+	del /Q $(subst /,\,$(OBJ) $(TARGET)) 2>nul
+else
+	rm -f $(OBJ) $(TARGET)
+endif
