@@ -5,8 +5,7 @@ int main(void) {
     hmi_init();
 
     // Loop
-    while (1) {
-        hmi_run(); 
+    while (hmi_run() == HMI_CONTINUE) { 
     }
 
     return 0;

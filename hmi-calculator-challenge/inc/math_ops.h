@@ -7,7 +7,8 @@
 typedef enum {
     MATH_OK = 0,                /**< Operação concluída com sucesso. */
     MATH_ERR_NULL_PTR,          /**< Ponteiro de saída (out) é NULL. */
-    MATH_ERR_DIV_BY_ZERO        /**< Divisor igual a zero. */
+    MATH_ERR_DIV_BY_ZERO,       /**< Divisor igual a zero. */
+    MATH_ERR_SINGULAR_MATRIX,   /*< Pivô nulo em toda a coluna: matriz singular (det = 0). */
     MATH_ERR_INVALID_DIMENSION  /*< n <= 0 ou n > MATH_OPS_MAX_MATRIX_DIM. */
 } MathStatus;
 
