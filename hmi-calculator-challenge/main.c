@@ -6,10 +6,7 @@ int main(void) {
 
     // Loop
     while (1) {
-        hmi_run();
-        
-        // Break temporário
-        break; 
+        hmi_run(); 
     }
 
     return 0;
