@@ -93,6 +93,18 @@ byte escaped." SLIP and byte-stuffed HDLC need that margin, or a bound on how mu
 frame can be adversarial byte values, which is exactly the kind of assumption a lossy link
 should not get to violate.
 
+Corruption of the delimiter byte itself is the one case this scheme does not recover from
+immediately. Every other single-bit corruption, wherever it lands, still leaves the frame's
+real trailing `0x00` intact, so the deframer always finds a clean boundary at the point the
+sender actually put one, rejects whatever garbage decoded in between, and is ready for the
+next frame with an empty buffer. But if a bit flip turns that trailing `0x00` into something
+else, there is no longer any boundary marking where the frame ends: COBS's own invariant
+guarantees no other `0x00` can appear until the next frame's real delimiter, so the corrupted
+frame's bytes run straight into it, and the two are judged, and rejected, together as one
+blob. The frame that would otherwise have followed is lost along with the corruption, not
+just the corrupted one. Full recovery is only guaranteed starting from the next correct
+delimiter after that.
+
 ## 4. Header
 
 Every frame, regardless of type, carries the same 8-byte header immediately after COBS
