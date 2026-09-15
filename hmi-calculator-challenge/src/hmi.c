@@ -5,8 +5,10 @@
 #include <limits.h>
 #include "hmi.h"
 #include "math_ops.h"
+#include "logger.h"
 
 #define HMI_INPUT_BUFFER_SIZE 64
+#define HMI_LOG_BUFFER_SIZE   128
 #define NUM_OPERACOES (sizeof(tabela_operacoes) / sizeof(tabela_operacoes[0]))
 
 typedef MathStatus (*ScalarOpFunc)(double, double, double *);
@@ -178,6 +180,10 @@ static void hmi_dispatch_scalar(int opcao) {
     
     if (status == MATH_OK) {
         printf("\n>>> RESULTADO: %s(%.4f, %.4f) = %.4f <<<\n", op->nome, a, b, resultado);
+
+        char log_msg[HMI_LOG_BUFFER_SIZE];
+        snprintf(log_msg, sizeof(log_msg), "%s(%.4f, %.4f) = %.4f", op->nome, a, b, resultado);
+        logger_append(log_msg);
     } else {
         hmi_print_math_status(status);
     }
@@ -210,7 +216,11 @@ static void hmi_handle_determinant(void) {
     if (status == MATH_OK || status == MATH_ERR_SINGULAR_MATRIX) {
         printf("\n>>> RESULTADO: Determinante = %.4f <<<\n", det);
     }
-    if (status != MATH_OK) {
+    if (status == MATH_OK) {
+        char log_msg[HMI_LOG_BUFFER_SIZE];
+        snprintf(log_msg, sizeof(log_msg), "Determinante(%dx%d) = %.4f", n, n, det);
+        logger_append(log_msg);
+    } else {
         hmi_print_math_status(status);
     }
 }
