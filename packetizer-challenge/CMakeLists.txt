@@ -28,21 +28,17 @@ add_library(packetizer STATIC
     lib/packetizer/src/crc.c
     lib/packetizer/src/cobs.c
     lib/packetizer/src/frame.c
+    lib/packetizer/src/pkt.c
 )
 target_include_directories(packetizer PUBLIC lib/packetizer/include)
 
 enable_testing()
 
 # One test binary per call: pkt_add_test(name src1.c [src2.c ...]).
-# lib/packetizer/src is on the include path so tests can reach internal
-# headers (frame.h and friends) that are not part of the public API.
 function(pkt_add_test name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE packetizer)
-    target_include_directories(${name} PRIVATE
-        ${CMAKE_SOURCE_DIR}/tests
-        ${CMAKE_SOURCE_DIR}/lib/packetizer/src
-    )
+    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
@@ -50,3 +46,4 @@ pkt_add_test(test_smoke tests/test_smoke.c)
 pkt_add_test(test_crc tests/test_crc.c)
 pkt_add_test(test_cobs tests/test_cobs.c)
 pkt_add_test(test_frame tests/test_frame.c)
+pkt_add_test(test_reassembly tests/test_reassembly.c tests/loopback.c)

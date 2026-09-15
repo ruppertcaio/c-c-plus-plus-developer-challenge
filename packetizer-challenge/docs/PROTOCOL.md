@@ -446,11 +446,13 @@ by fragment, so this struct only exists for the receive direction:
 |---|---|---|
 | `raw` | `uint8_t[PKT_MAX_WIRE_FRAME]` | 140 |
 | `len` | `uint8_t` | 1 |
+| `discarding` | `bool` | 1 |
 
 `PKT_MAX_WIRE_FRAME = 140` fits in a `uint8_t` count (max 255), so `len` does not need to be
 wider. COBS decoding never expands data, so decoding happens in place in `raw`, no second
-buffer needed. All fields are byte-aligned, no padding. `sizeof(pkt_deframer_t) = 141`
-bytes.
+buffer needed. `discarding` marks a candidate frame that overflowed `raw` and is being
+skipped up to the next delimiter (see `frame.h`/`frame.c`). All fields are byte-aligned, no
+padding. `sizeof(pkt_deframer_t) = 142` bytes.
 
 **Recent-ids cache** (`pkt_recent_cache_t`), one instance, `PKT_RECENT_IDS` entries of
 `{ uint16_t msg_id; uint8_t epoch; }`: raw entry size 3 bytes, padded to 4 for the
@@ -461,9 +463,9 @@ bytes.
 |---|---|---|---|
 | `pkt_rx_session_t` | 4128 | 2 | 8256 |
 | `pkt_tx_slot_t` | 72 | 4 | 288 |
-| `pkt_deframer_t` | 141 | 1 | 141 |
+| `pkt_deframer_t` | 142 | 1 | 142 |
 | `pkt_recent_cache_t` | 34 | 1 | 34 |
-| **Total** | | | **8719 bytes ≈ 8.5 KB** |
+| **Total** | | | **8720 bytes ≈ 8.5 KB** |
 
 That fits inside the ~16 KB budget from section 1 with room to spare, roughly half of it
 left over for the application layer (file I/O buffers, the caller's own TX message buffers,
@@ -473,7 +475,7 @@ message into its own buffer per slot, which alone cost `4096 × PKT_MAX_TX_MSGS 
 blew the whole budget by itself. Removing that copy is what makes the number here small
 enough to matter.
 
-The dominant cost that remains is the RX session buffer: `8256` of the `8719` total bytes,
+The dominant cost that remains is the RX session buffer: `8256` of the `8720` total bytes,
 about 95%, and it is not something the TX zero-copy contract touches, since it protects a
 different direction of the link. Fragments arrive spread out over an unpredictable amount
 of time and, on a lossy link, out of order, so something has to hold the bytes that have

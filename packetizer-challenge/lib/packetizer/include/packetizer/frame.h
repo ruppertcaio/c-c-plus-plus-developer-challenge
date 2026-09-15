@@ -9,8 +9,9 @@
 
 /*
  * Frame encode/parse and the byte-stream deframer, PROTOCOL.md sections 3-6.
- * Internal to the core: nothing above reassembly ever sees a struct frame,
- * only fully reassembled messages.
+ * Used by the reassembly layer (pkt.c): nothing above it deals with struct
+ * frame directly, only fully reassembled messages. Public only because
+ * pkt_ctx_t embeds struct deframer and struct pkt_rx_errors by value.
  */
 
 #define PKT_VERSION 1u
