@@ -24,10 +24,10 @@ if(PKT_SANITIZE)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-# No .c files yet, so the core is header-only. Flip to add_library(packetizer STATIC ...)
-# once lib/packetizer/src gains sources, and move this include dir to PUBLIC.
-add_library(packetizer INTERFACE)
-target_include_directories(packetizer INTERFACE lib/packetizer/include)
+add_library(packetizer STATIC
+    lib/packetizer/src/crc.c
+)
+target_include_directories(packetizer PUBLIC lib/packetizer/include)
 
 enable_testing()
 
@@ -40,3 +40,4 @@ function(pkt_add_test name)
 endfunction()
 
 pkt_add_test(test_smoke tests/test_smoke.c)
+pkt_add_test(test_crc tests/test_crc.c)
