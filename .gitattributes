@@ -1,0 +1,13 @@
+# Normalizacao de fim de linha: o repositorio armazena sempre LF.
+# Garante diffs limpos independentemente do sistema operacional do colaborador.
+* text=auto
+
+*.c    text eol=lf
+*.h    text eol=lf
+*.md   text eol=lf
+Makefile text eol=lf
+
+# Artefatos binarios: nunca normalizar.
+*.exe  binary
+*.o    binary
+*.bin  binary

@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Artefatos gerados em tempo de execucao
+history.txt
+
+# Diretorios de build
+build/
