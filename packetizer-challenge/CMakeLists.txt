@@ -26,6 +26,7 @@ endif()
 
 add_library(packetizer STATIC
     lib/packetizer/src/crc.c
+    lib/packetizer/src/cobs.c
 )
 target_include_directories(packetizer PUBLIC lib/packetizer/include)
 
@@ -41,3 +42,4 @@ endfunction()
 
 pkt_add_test(test_smoke tests/test_smoke.c)
 pkt_add_test(test_crc tests/test_crc.c)
+pkt_add_test(test_cobs tests/test_cobs.c)
