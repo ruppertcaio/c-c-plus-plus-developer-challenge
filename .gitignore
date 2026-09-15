@@ -36,3 +36,4 @@ history.txt
 
 # Diretorios de build
 build/
+.vscode/
