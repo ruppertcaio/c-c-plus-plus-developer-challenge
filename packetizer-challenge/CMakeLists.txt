@@ -32,12 +32,21 @@ add_library(packetizer STATIC
 )
 target_include_directories(packetizer PUBLIC lib/packetizer/include)
 
+# Transport-side helpers: outside the core, not bound by its no-libc rules,
+# but still dependency-free (see transport/impair.h).
+add_library(transport STATIC
+    transport/impair.c
+)
+target_include_directories(transport PUBLIC ${CMAKE_SOURCE_DIR})
+
 enable_testing()
 
-# One test binary per call: pkt_add_test(name src1.c [src2.c ...]).
+# One test binary per call: pkt_add_test(name src1.c [src2.c ...]). Every
+# test links transport too: loopback.c calls into it unconditionally now,
+# whether or not a given test ever turns impairment on.
 function(pkt_add_test name)
     add_executable(${name} ${ARGN})
-    target_link_libraries(${name} PRIVATE packetizer)
+    target_link_libraries(${name} PRIVATE packetizer transport)
     target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -48,3 +57,4 @@ pkt_add_test(test_cobs tests/test_cobs.c)
 pkt_add_test(test_frame tests/test_frame.c)
 pkt_add_test(test_reassembly tests/test_reassembly.c tests/loopback.c)
 pkt_add_test(test_reliability tests/test_reliability.c tests/loopback.c)
+pkt_add_test(test_hostile tests/test_hostile.c tests/loopback.c)

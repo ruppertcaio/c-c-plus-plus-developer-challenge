@@ -2,6 +2,7 @@
 #define LOOPBACK_H
 
 #include "packetizer/pkt.h"
+#include "transport/impair.h"
 
 /* Two pkt_ctx_t wired together over in-memory frame queues, for tests that
  * need to drive both ends of a link without a real transport. The simulated
@@ -9,8 +10,11 @@
  * there is no clock field here.
  */
 
-#define LOOPBACK_MAX_FRAMES 128
-#define LOOPBACK_MAX_MESSAGES 8
+/* Generous enough to cover a hostile-channel soak (many in-flight fragments,
+ * further multiplied by impair's dup/split) without the queue silently
+ * dropping frames a slower test would never produce enough of to notice. */
+#define LOOPBACK_MAX_FRAMES 512
+#define LOOPBACK_MAX_MESSAGES 40
 
 typedef struct {
     uint8_t data[PKT_MAX_WIRE_FRAME];
@@ -30,6 +34,13 @@ typedef struct {
     size_t count;
     loopback_hook_t hook;
     void *hook_user;
+    /* Statistical degradation, PROTOCOL.md's hostile-link failure modes
+     * (loss/corruption/dup/reorder/split) rather than the hook's precise
+     * one-fragment targeting. A direction uses one or the other: when
+     * impair_active, queue_push() runs frames through impair_process()
+     * and never consults hook. */
+    struct impair_state impair;
+    bool impair_active;
 } loopback_queue_t;
 
 /* One message captured by on_message(), snapshotted immediately: the
@@ -68,6 +79,13 @@ void loopback_rewire(loopback_t *lb, pkt_ctx_t *a, uint8_t epoch_a, pkt_ctx_t *b
 
 void loopback_set_hook(loopback_t *lb, bool a_to_b, loopback_hook_t hook, void *user);
 
+/* Replaces the ad hoc hook for one direction with statistical impairment
+ * (see transport/impair.h): every frame written that way is dropped,
+ * corrupted, duplicated, reordered or split at random instead of passing
+ * through hook. Call after loopback_init()/loopback_rewire(), which zero
+ * the whole loopback_t including this state. */
+void loopback_set_impair(loopback_t *lb, bool a_to_b, const struct impair_cfg *cfg);
+
 /* Delivers every currently queued frame to the peer's pkt_feed(), in queue
  * order, then clears the queue. Tests needing a different delivery order
  * (reordering, interleaving) mutate frames[0..count) directly first. */
@@ -80,5 +98,11 @@ void loopback_flush_b_to_a(loopback_t *lb);
  * without hand-rolling the round-trip loop themselves. Tests asserting on
  * exact RTO timing still step now_ms and poll manually instead. */
 void loopback_pump(loopback_t *lb, uint32_t now_ms, int max_rounds);
+
+/* Same as loopback_pump(), but first releases anything either direction's
+ * impair is still holding for a reorder swap. Without this, a block held
+ * because its "next" never came (the test simply stopped sending) would sit
+ * in impair forever and its message would never settle. */
+void loopback_settle(loopback_t *lb, uint32_t now_ms, int max_rounds);
 
 #endif /* LOOPBACK_H */

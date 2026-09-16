@@ -5,7 +5,28 @@
 
 #include <string.h>
 
+/* impair_process()'s emit_cb: appends one already-impaired chunk straight
+ * to the queue, bypassing the hook entirely (impair_active means impair
+ * replaces it, not layers with it, see loopback_set_impair()). */
+static bool impair_emit(void *user, const uint8_t *buf, size_t len) {
+    loopback_queue_t *q = user;
+    if (q->count >= LOOPBACK_MAX_FRAMES) {
+        return false;
+    }
+    memcpy(q->frames[q->count].data, buf, len);
+    q->frames[q->count].len = len;
+    q->count++;
+    return true;
+}
+
 static bool queue_push(loopback_queue_t *q, const uint8_t *buf, size_t len) {
+    if (q->impair_active) {
+        impair_process(&q->impair, buf, len, impair_emit, q);
+        /* impair already models loss explicitly; a full queue just drops
+         * whatever didn't fit, same as a real link running out of buffer. */
+        return true;
+    }
+
     uint8_t type = 0;
     uint16_t msg_id = 0;
     uint16_t frag_idx = 0;
@@ -128,6 +149,12 @@ void loopback_set_hook(loopback_t *lb, bool a_to_b, loopback_hook_t hook, void *
     q->hook_user = user;
 }
 
+void loopback_set_impair(loopback_t *lb, bool a_to_b, const struct impair_cfg *cfg) {
+    loopback_queue_t *q = a_to_b ? &lb->a_to_b : &lb->b_to_a;
+    impair_init(&q->impair, cfg);
+    q->impair_active = true;
+}
+
 void loopback_flush_a_to_b(loopback_t *lb) {
     for (size_t i = 0; i < lb->a_to_b.count; i++) {
         pkt_feed(lb->b.ctx, lb->a_to_b.frames[i].data, lb->a_to_b.frames[i].len);
@@ -153,4 +180,10 @@ void loopback_pump(loopback_t *lb, uint32_t now_ms, int max_rounds) {
             return;
         }
     }
+}
+
+void loopback_settle(loopback_t *lb, uint32_t now_ms, int max_rounds) {
+    impair_flush(&lb->a_to_b.impair, impair_emit, &lb->a_to_b);
+    impair_flush(&lb->b_to_a.impair, impair_emit, &lb->b_to_a);
+    loopback_pump(lb, now_ms, max_rounds);
 }
