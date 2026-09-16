@@ -35,11 +35,13 @@ static void hmi_flush_stdin_line(void) {
 }
 
 /* Captura uma linha completa, garantindo o esvaziamento do buffer do SO */
-static int hmi_read_line(char *buffer, size_t size) {
+static int hmi_read_line(char *buffer, size_t size, int *truncado) {
+    *truncado = 0;
+
     if (fgets(buffer, (int)size, stdin) == NULL) {
         return 0;
     }
-    
+
     size_t len = strlen(buffer);
     if (len > 0 && buffer[len - 1] == '\n') {
         buffer[--len] = '\0';
@@ -48,7 +50,10 @@ static int hmi_read_line(char *buffer, size_t size) {
             buffer[len - 1] = '\0';
         }
     } else if (len == size - 1) {
+        /* A linha excedeu o buffer: o excedente e descartado, entao o conteudo
+           lido NAO representa o que o usuario digitou. Sinaliza para rejeicao. */
         hmi_flush_stdin_line();
+        *truncado = 1;
     }
     return 1;
 }
@@ -56,10 +61,17 @@ static int hmi_read_line(char *buffer, size_t size) {
 /* Parser blindado para inteiros */
 int hmi_read_int(const char *prompt, int *out) {
     char buffer[HMI_INPUT_BUFFER_SIZE];
+    int truncado;
     for (;;) {
         printf("%s", prompt);
-        if (!hmi_read_line(buffer, sizeof(buffer))) {
+        if (!hmi_read_line(buffer, sizeof(buffer), &truncado)) {
             return 0;
+        }
+
+        if (truncado) {
+            printf("[ERRO] Entrada muito longa (maximo %d caracteres).\n",
+                   HMI_INPUT_BUFFER_SIZE - 1);
+            continue;
         }
 
         char *endptr;
@@ -80,10 +92,17 @@ int hmi_read_int(const char *prompt, int *out) {
 /* Parser blindado para ponto flutuante */
 int hmi_read_double(const char *prompt, double *out) {
     char buffer[HMI_INPUT_BUFFER_SIZE];
+    int truncado;
     for (;;) {
         printf("%s", prompt);
-        if (!hmi_read_line(buffer, sizeof(buffer))) {
+        if (!hmi_read_line(buffer, sizeof(buffer), &truncado)) {
             return 0;
+        }
+
+        if (truncado) {
+            printf("[ERRO] Entrada muito longa (maximo %d caracteres).\n",
+                   HMI_INPUT_BUFFER_SIZE - 1);
+            continue;
         }
 
         char *endptr;
