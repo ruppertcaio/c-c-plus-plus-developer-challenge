@@ -22,11 +22,11 @@ test: $(TEST_BIN)
 $(TEST_BIN): $(TEST_SRC) inc/math_ops.h
 	$(CC) $(CFLAGS) -o $@ $(TEST_SRC)
 
+# rm -f e portavel para todo shell capaz de compilar este projeto no Windows
+# (MinGW, MSYS2, Git Bash, WSL). A variante anterior decidia por $(OS), que vale
+# Windows_NT tambem no Git Bash, onde 'del' e 'nul' nao existem: o alvo abortava
+# com erro 127 e criava um arquivo literal chamado nul.
 clean:
-ifeq ($(OS),Windows_NT)
-	del /Q $(subst /,\,$(OBJ) $(TARGET) $(TEST_BIN)) 2>nul
-else
 	rm -f $(OBJ) $(TARGET) $(TEST_BIN)
-endif
 
 .PHONY: all test clean
