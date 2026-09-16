@@ -415,28 +415,45 @@ the tail from 4122 up to 4128. `sizeof(pkt_rx_session_t) = 4128` bytes. Array of
 `PKT_MAX_RX_SESSIONS = 2`: `2 × 4128 = 8256` bytes.
 
 **TX flight-table entry** (`pkt_tx_slot_t`), one per `PKT_MAX_TX_MSGS` slot, holds no
-message bytes at all:
+message bytes at all. Each of the `PKT_TX_WINDOW` in-flight fragments is tracked by an
+explicit `pkt_flight_t { uint16_t frag_idx; uint32_t deadline_ms; uint8_t retry_cnt; bool
+active; bool armed; }` rather than a bare `frag_idx`-less array indexed some other way:
+`frag_idx` costs 2 extra bytes per entry over the minimum, but keeps a retransmit's target
+fragment a direct field lookup instead of something reconstructed from a sliding or
+modulo-indexed window, which matters more for correctness under test than the few extra
+bytes matter for the RAM budget.
 
 | Field | Type | Bytes |
 |---|---|---|
-| `acked_mask` | `uint64_t` | 8 |
 | `msg` | `const uint8_t *` | 4 |
 | `total_len` | `uint32_t` | 4 |
 | `msg_crc32` | `uint32_t` | 4 |
-| `rto_deadline_ms` | `uint32_t[PKT_TX_WINDOW]` | 32 |
-| `retry_cnt` | `uint8_t[PKT_TX_WINDOW]` | 8 |
+| `acked_mask` | `uint64_t` | 8 |
+| `flight` | `pkt_flight_t[PKT_TX_WINDOW]` | 96 |
 | `msg_id` | `uint16_t` | 2 |
 | `frag_cnt` | `uint16_t` | 2 |
+| `next_frag` | `uint16_t` | 2 |
 | `epoch` | `uint8_t` | 1 |
 | `msg_retry_cnt` | `uint8_t` | 1 |
 | `state` | `uint8_t` | 1 |
+| `done_wait` | `bool` | 1 |
+| `done_wait_armed` | `bool` | 1 |
+| `done_deadline_ms` | `uint32_t` | 4 |
+| `done_retry_cnt` | `uint8_t` | 1 |
 
-Raw sum 67 bytes, laid out with `acked_mask` first so everything else stays on natural
-boundaries; the struct's 8-byte alignment pads the tail from 67 up to 72.
-`sizeof(pkt_tx_slot_t) = 72` bytes. Array of `PKT_MAX_TX_MSGS = 4`: `4 × 72 = 288` bytes.
-`msg_crc32` is computed once, at `pkt_send()` time, over the caller's buffer, and kept here
-rather than recomputed on every retransmit; that is the one field this struct holds that is
-derived from the message rather than being a pointer into it.
+`pkt_flight_t` itself is `2 (frag_idx) + 2 (padding to align deadline_ms) + 4 (deadline_ms) +
+1 (retry_cnt) + 1 (active) + 1 (armed) + 1 (padding to the struct's own 4-byte alignment) =
+12` bytes; `PKT_TX_WINDOW = 8` of them is the `96` above. `done_wait`/`done_wait_armed`/
+`done_deadline_ms`/`done_retry_cnt` are separate from `flight` rather than reusing one of its
+entries: once every fragment is acked, `flight` is entirely empty (every entry frees on ACK),
+so the retry timer for the DONE-wait nudge (section 7) has nothing left in `flight` to key
+against. Raw sum 132 bytes; with `acked_mask`'s 8-byte alignment forcing 4 bytes of padding
+before it and 3 more scattered through the single-byte fields at the tail to keep
+`done_deadline_ms` 4-byte aligned, `sizeof(pkt_tx_slot_t) = 144` bytes. Array of
+`PKT_MAX_TX_MSGS = 4`: `4 × 144 = 576` bytes. `msg_crc32` is computed once, at `pkt_send()`
+time, over the caller's buffer, and kept here rather than recomputed on every retransmit;
+that is the one field this struct holds that is derived from the message rather than being
+a pointer into it.
 
 **Deframer** (`pkt_deframer_t`), one instance, decodes the incoming byte stream; there is
 nothing to buffer on the encode side beyond the one wire frame being written out fragment
@@ -456,16 +473,21 @@ padding. `sizeof(pkt_deframer_t) = 142` bytes.
 
 **Recent-ids cache** (`pkt_recent_cache_t`), one instance, `PKT_RECENT_IDS` entries of
 `{ uint16_t msg_id; uint8_t epoch; }`: raw entry size 3 bytes, padded to 4 for the
-`uint16_t` alignment. `PKT_RECENT_IDS × 4 = 32` bytes, plus a 1-byte ring cursor, padded to
-34 for the same reason. `sizeof(pkt_recent_cache_t) = 34` bytes.
+`uint16_t` alignment. `PKT_RECENT_IDS × 4 = 32` bytes, plus two ring-bookkeeping bytes
+(`cursor`, the next slot to overwrite, and `count`, how many entries have actually been
+written so far, capped at `PKT_RECENT_IDS`) rather than one: without `count`, a
+freshly-zeroed cache's all-zero entries would spuriously match `(epoch=0, msg_id=0)`, which
+is exactly the very first message any freshly-initialized sender produces. `sizeof
+(pkt_recent_cache_t) = 34` bytes either way, the two bytes replace what would otherwise be
+one cursor byte plus one byte of trailing padding.
 
 | Struct | sizeof | Count | Total |
 |---|---|---|---|
 | `pkt_rx_session_t` | 4128 | 2 | 8256 |
-| `pkt_tx_slot_t` | 72 | 4 | 288 |
+| `pkt_tx_slot_t` | 144 | 4 | 576 |
 | `pkt_deframer_t` | 142 | 1 | 142 |
 | `pkt_recent_cache_t` | 34 | 1 | 34 |
-| **Total** | | | **8720 bytes ≈ 8.5 KB** |
+| **Total** | | | **9008 bytes ≈ 8.8 KB** |
 
 That fits inside the ~16 KB budget from section 1 with room to spare, roughly half of it
 left over for the application layer (file I/O buffers, the caller's own TX message buffers,
@@ -475,8 +497,8 @@ message into its own buffer per slot, which alone cost `4096 × PKT_MAX_TX_MSGS 
 blew the whole budget by itself. Removing that copy is what makes the number here small
 enough to matter.
 
-The dominant cost that remains is the RX session buffer: `8256` of the `8720` total bytes,
-about 95%, and it is not something the TX zero-copy contract touches, since it protects a
+The dominant cost that remains is the RX session buffer: `8256` of the `9008` total bytes,
+about 92%, and it is not something the TX zero-copy contract touches, since it protects a
 different direction of the link. Fragments arrive spread out over an unpredictable amount
 of time and, on a lossy link, out of order, so something has to hold the bytes that have
 landed so far until `msg_crc32` can be checked over the complete message; there is no

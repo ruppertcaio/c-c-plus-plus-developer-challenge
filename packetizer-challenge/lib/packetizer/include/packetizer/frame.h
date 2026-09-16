@@ -23,6 +23,15 @@ enum frame_type {
     FRAME_NACK = 4,
 };
 
+/* NACK payload is a single reason byte, PROTOCOL.md section 7. Values match the wire
+ * encoding exactly, not just enum declaration order. */
+enum frame_nack_reason {
+    FRAME_NACK_TOO_BIG = 1,
+    FRAME_NACK_BAD_CRC = 2,
+    FRAME_NACK_NO_SESSION = 3,
+    FRAME_NACK_MALFORMED = 4,
+};
+
 enum frame_err {
     FRAME_OK = 0,
     FRAME_ERR_SHORT,        /* fewer bytes than header + CRC-16 */

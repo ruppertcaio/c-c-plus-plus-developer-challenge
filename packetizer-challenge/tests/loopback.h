@@ -60,6 +60,12 @@ typedef struct {
  * on_tx_done to record into the matching loopback_endpoint_t. */
 void loopback_init(loopback_t *lb, pkt_ctx_t *a, uint8_t epoch_a, pkt_ctx_t *b, uint8_t epoch_b);
 
+/* Same wiring as loopback_init, but b is left untouched (no pkt_init call):
+ * only its callbacks are repointed at lb. For tests simulating one side's
+ * process restarting (a fresh a) against a peer (b) that kept running and
+ * may still hold state — sessions, recent-ids cache, stats — from before. */
+void loopback_rewire(loopback_t *lb, pkt_ctx_t *a, uint8_t epoch_a, pkt_ctx_t *b);
+
 void loopback_set_hook(loopback_t *lb, bool a_to_b, loopback_hook_t hook, void *user);
 
 /* Delivers every currently queued frame to the peer's pkt_feed(), in queue
@@ -67,5 +73,12 @@ void loopback_set_hook(loopback_t *lb, bool a_to_b, loopback_hook_t hook, void *
  * (reordering, interleaving) mutate frames[0..count) directly first. */
 void loopback_flush_a_to_b(loopback_t *lb);
 void loopback_flush_b_to_a(loopback_t *lb);
+
+/* Polls both ends at the fixed now_ms, flushes both directions, and repeats
+ * until neither flush enqueues anything new or max_rounds is hit. For tests
+ * that just want a message to settle (delivered, timed out or rejected)
+ * without hand-rolling the round-trip loop themselves. Tests asserting on
+ * exact RTO timing still step now_ms and poll manually instead. */
+void loopback_pump(loopback_t *lb, uint32_t now_ms, int max_rounds);
 
 #endif /* LOOPBACK_H */

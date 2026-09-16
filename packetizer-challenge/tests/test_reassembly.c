@@ -27,8 +27,10 @@ TEST(size_roundtrip_all_boundaries) {
         uint16_t id = 0;
         CHECK_EQ(pkt_send(&tx, msg, sizes[s], &id), PKT_OK);
 
-        pkt_poll(&tx, 0);
-        loopback_flush_a_to_b(&lb);
+        /* PKT_MAX_MESSAGE needs several send/ack rounds against an 8-fragment
+         * window (33 fragments total), so drive both directions until the
+         * ACK/DONE round trip settles instead of a single poll+flush. */
+        loopback_pump(&lb, 0, 8);
 
         CHECK_EQ(lb.b.message_count, 1u);
         if (lb.b.message_count == 1) {
@@ -38,7 +40,7 @@ TEST(size_roundtrip_all_boundaries) {
         CHECK_EQ(lb.a.tx_done_count, 1u);
         if (lb.a.tx_done_count == 1) {
             CHECK_EQ(lb.a.tx_done_ids[0], id);
-            CHECK_EQ(lb.a.tx_done_status[0], PKT_TX_SENT);
+            CHECK_EQ(lb.a.tx_done_status[0], PKT_TX_DELIVERED);
         }
     }
 }
@@ -159,12 +161,11 @@ TEST(all_fragments_duplicated_delivers_once) {
     }
 
     /* The last fragment's duplicate copy arrives right after the one that
-     * completes the bitmap, by which point accept_fragment() has already
-     * freed the session: with no recent-ids cache yet (deferred along with
-     * the rest of PROTOCOL.md section 8), that straggler finds no session
-     * to match and is dropped uncounted rather than flagged as a duplicate.
-     * Every other fragment's duplicate lands while its session is still
-     * open, so the achievable count here is frag_cnt - 1, not frag_cnt. */
+     * completes the bitmap, by which point the session is already freed and
+     * (epoch, msg_id) is in the recent-ids cache: that straggler gets a
+     * resent DONE, not counted as a duplicate fragment. Every other
+     * fragment's duplicate lands while its session is still open, so the
+     * achievable count here is frag_cnt - 1, not frag_cnt. */
     size_t frag_cnt = (sizeof(msg) + PKT_META_SIZE + PKT_MAX_PAYLOAD - 1) / PKT_MAX_PAYLOAD;
     pkt_stats_t st;
     pkt_get_stats(&rx, &st);

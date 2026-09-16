@@ -9,11 +9,10 @@
 #include <stdint.h>
 
 /*
- * Data path only: fragment, send, reassemble, deliver. No ACK, retry, NACK
- * or duplicate-of-a-completed-message detection yet (PROTOCOL.md sections
- * 7-8) — that lands with the reliability commit. The one piece of that
- * machinery already in here is RX session timeout, since without it a
- * lossy transfer would pin one of only PKT_MAX_RX_SESSIONS slots forever.
+ * Fragment, send, reassemble, deliver, and the selective-repeat reliability
+ * machinery on top: ACK/NACK/DONE, retry with exponential backoff, message
+ * restart on BAD_CRC, and duplicate-of-a-completed-message detection
+ * (PROTOCOL.md sections 7-8).
  */
 
 typedef enum {
@@ -23,16 +22,15 @@ typedef enum {
 } pkt_result_t;
 
 typedef enum {
-    PKT_TX_SENT = 0,  /* every fragment reached write() successfully */
-    /* No delivery confirmation exists yet: DELIVERED/TIMEOUT/REJECTED
-     * (PROTOCOL.md section 9) need ACK/DONE/NACK, which is not implemented
-     * here. This value only means the local write side is done with it. */
+    PKT_TX_DELIVERED = 0,  /* DONE received */
+    PKT_TX_TIMEOUT,        /* a fragment exhausted PKT_MAX_RETRIES with no response at all */
+    PKT_TX_REJECTED,       /* peer NACKed TOO_BIG/MALFORMED, or BAD_CRC past PKT_MSG_RETRIES */
 } pkt_tx_status_t;
 
 typedef struct {
     /* Hands one wire-encoded frame to the transport. Returns false to mean
-     * backpressure: the fragment stays pending and pkt_poll() retries it
-     * on the next call, in the same position, before moving on. */
+     * backpressure: the frame is not considered sent, and pkt_poll() will
+     * offer it again on a later call. */
     bool (*write)(void *user, const uint8_t *buf, size_t len);
     /* Fires once per reassembled message, data valid only for the call. */
     void (*on_message)(void *user, const uint8_t *data, size_t len);
@@ -53,18 +51,53 @@ typedef struct {
     uint32_t message_crc_errors; /* CRC-32 mismatch after a message's bitmap completed */
     uint32_t cobs_errors;
     uint32_t sessions_expired;   /* RX sessions freed by PKT_RX_TIMEOUT_MS */
+    uint32_t retransmissions;    /* DATA fragments (including DONE-wait nudges) sent more than once */
+    uint32_t acks_sent;
+    uint32_t acks_received;
+    uint32_t dones_sent;
+    uint32_t dones_received;
+    uint32_t nacks_sent;
+    uint32_t nacks_received;
 } pkt_stats_t;
 
-/* One in-flight outbound message: msg is never copied, see pkt_send(). */
+/* One fragment currently sent-but-unacknowledged. Holds no message bytes:
+ * TX is zero-copy (see pkt_send()), so a retransmit rebuilds the payload
+ * from the slot's msg/total_len/frag_cnt, same as the original send. */
 typedef struct {
-    const uint8_t *msg;
+    uint16_t frag_idx;
+    uint32_t deadline_ms;
+    uint8_t retry_cnt;   /* retransmissions already spent on this fragment */
+    bool active;         /* false = free entry */
+    /* pkt_feed() has no now_ms (PROTOCOL.md section 2). The NO_SESSION
+     * reaction resends this fragment synchronously from inside pkt_feed()
+     * but cannot compute a real deadline there; armed = false means "already
+     * sent, just stamp deadline_ms with the real now_ms on the next
+     * pkt_poll() call, don't send again" — the same deferred-stamp trick
+     * pkt_rx_session_t.touched uses for last_rx_ms. */
+    bool armed;
+} pkt_flight_t;
+
+/* One in-flight outbound message. */
+typedef struct {
+    const uint8_t *msg;   /* never copied, see pkt_send() */
     uint32_t total_len;
     uint32_t msg_crc32;
+    uint64_t acked_mask;
+    pkt_flight_t flight[PKT_TX_WINDOW];
     uint16_t msg_id;
     uint16_t frag_cnt;
-    uint16_t next_frag;  /* first fragment not yet handed to write() successfully */
-    uint8_t epoch;
+    uint16_t next_frag;      /* first fragment index never yet handed to write() */
+    uint8_t epoch;           /* this slot's own copy; BAD_CRC restart bumps only this one */
+    uint8_t msg_retry_cnt;   /* whole-message restarts spent on BAD_CRC */
     uint8_t state;
+    /* Every fragment acked, no DONE yet: flight[] is empty at this point
+     * (every entry frees on ACK), so the retry timer for the last-fragment
+     * nudge (PROTOCOL.md section 7) gets its own fields instead of reusing
+     * a flight entry that no longer exists. */
+    bool done_wait;
+    bool done_wait_armed;
+    uint32_t done_deadline_ms;
+    uint8_t done_retry_cnt;
 } pkt_tx_slot_t;
 
 /* One in-flight inbound message, keyed by (epoch, msg_id) once fragment 0
@@ -87,15 +120,37 @@ typedef struct {
     bool touched;
 } pkt_rx_session_t;
 
+/* One completed (epoch, msg_id) pair, PROTOCOL.md section 8. */
+typedef struct {
+    uint16_t msg_id;
+    uint8_t epoch;
+} pkt_recent_entry_t;
+
+/* Ring of the last PKT_RECENT_IDS delivered messages, so a fragment or a
+ * DONE-lost nudge arriving after the session already closed gets recognized
+ * as a duplicate instead of silently dropped or, worse, redelivered.
+ * count (entries actually written, capped at PKT_RECENT_IDS) exists so a
+ * freshly-zeroed cache doesn't spuriously match (epoch=0, msg_id=0), which
+ * is exactly the very first message any fresh sender produces. */
+typedef struct {
+    pkt_recent_entry_t entries[PKT_RECENT_IDS];
+    uint8_t cursor;
+    uint8_t count;
+} pkt_recent_cache_t;
+
 typedef struct {
     pkt_rx_session_t rx_sessions[PKT_MAX_RX_SESSIONS];
     pkt_tx_slot_t tx_slots[PKT_MAX_TX_MSGS];
+    pkt_recent_cache_t recent;
     struct deframer deframer;
     pkt_callbacks_t cb;
     pkt_stats_t stats;
     struct pkt_rx_errors rx_errors;
     uint16_t next_msg_id;
     uint8_t epoch;
+    /* Round-robin starting point for pkt_poll()'s TX scheduler, so a long
+     * message's many fragments don't get first dibs on every single call. */
+    uint8_t tx_rr_cursor;
 } pkt_ctx_t;
 
 /* Zeroes ctx (valid initial state for every field: free slots, empty

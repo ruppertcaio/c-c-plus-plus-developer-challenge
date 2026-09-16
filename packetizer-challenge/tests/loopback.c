@@ -111,6 +111,17 @@ void loopback_init(loopback_t *lb, pkt_ctx_t *a, uint8_t epoch_a, pkt_ctx_t *b, 
     pkt_init(b, &cb_b, epoch_b);
 }
 
+void loopback_rewire(loopback_t *lb, pkt_ctx_t *a, uint8_t epoch_a, pkt_ctx_t *b) {
+    memset(lb, 0, sizeof(*lb));
+    lb->a.ctx = a;
+    lb->b.ctx = b;
+
+    pkt_callbacks_t cb_a = { write_a, on_message_a, on_tx_done_a, lb };
+    pkt_callbacks_t cb_b = { write_b, on_message_b, on_tx_done_b, lb };
+    pkt_init(a, &cb_a, epoch_a);
+    b->cb = cb_b;
+}
+
 void loopback_set_hook(loopback_t *lb, bool a_to_b, loopback_hook_t hook, void *user) {
     loopback_queue_t *q = a_to_b ? &lb->a_to_b : &lb->b_to_a;
     q->hook = hook;
@@ -129,4 +140,17 @@ void loopback_flush_b_to_a(loopback_t *lb) {
         pkt_feed(lb->a.ctx, lb->b_to_a.frames[i].data, lb->b_to_a.frames[i].len);
     }
     lb->b_to_a.count = 0;
+}
+
+void loopback_pump(loopback_t *lb, uint32_t now_ms, int max_rounds) {
+    for (int round = 0; round < max_rounds; round++) {
+        pkt_poll(lb->a.ctx, now_ms);
+        pkt_poll(lb->b.ctx, now_ms);
+        size_t sent = lb->a_to_b.count + lb->b_to_a.count;
+        loopback_flush_a_to_b(lb);
+        loopback_flush_b_to_a(lb);
+        if (sent == 0) {
+            return;
+        }
+    }
 }
