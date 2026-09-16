@@ -201,7 +201,15 @@ static void hmi_dispatch_scalar(int opcao) {
         printf("\n>>> RESULTADO: %s(%.4f, %.4f) = %.4f <<<\n", op->nome, a, b, resultado);
 
         char log_msg[HMI_LOG_BUFFER_SIZE];
-        snprintf(log_msg, sizeof(log_msg), "%s(%.4f, %.4f) = %.4f", op->nome, a, b, resultado);
+        int escrito = snprintf(log_msg, sizeof(log_msg), "%s(%.4f, %.4f) = %.4f",
+                               op->nome, a, b, resultado);
+        if (escrito < 0 || (size_t)escrito >= sizeof(log_msg)) {
+            /* %.4f nao tem largura limitada: valores extremos estourariam o
+               buffer e gravariam um numero truncado (errado) na auditoria.
+               %g tem largura limitada e preserva o valor. */
+            snprintf(log_msg, sizeof(log_msg), "%s(%g, %g) = %g",
+                     op->nome, a, b, resultado);
+        }
         logger_append(log_msg);
     } else {
         hmi_print_math_status(status);
@@ -237,7 +245,10 @@ static void hmi_handle_determinant(void) {
     }
     if (status == MATH_OK) {
         char log_msg[HMI_LOG_BUFFER_SIZE];
-        snprintf(log_msg, sizeof(log_msg), "Determinante(%dx%d) = %.4f", n, n, det);
+        int escrito = snprintf(log_msg, sizeof(log_msg), "Determinante(%dx%d) = %.4f", n, n, det);
+        if (escrito < 0 || (size_t)escrito >= sizeof(log_msg)) {
+            snprintf(log_msg, sizeof(log_msg), "Determinante(%dx%d) = %g", n, n, det);
+        }
         logger_append(log_msg);
     } else {
         hmi_print_math_status(status);
