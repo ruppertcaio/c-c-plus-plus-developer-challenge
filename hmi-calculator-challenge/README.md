@@ -212,7 +212,57 @@ repete o prompt.
 
 ---
 
-## 6. Cobertura dos requisitos
+## 6. Premissas assumidas
+
+O enunciado afirma que o candidato é livre para assumir as premissas que considerar
+necessárias. As que afetam o escopo entregue estão registradas aqui.
+
+### "Add possibility to create new operation type"
+
+Este bônus admite duas leituras, e a escolha entre elas muda substancialmente o escopo:
+
+**Leitura A — extensibilidade de arquitetura.** O código permite acrescentar um novo tipo
+de operação com alteração mínima e localizada.
+
+**Leitura B — criação em tempo de execução.** O usuário final define uma operação nova
+pela interface, e ela passa a estar disponível nas execuções seguintes.
+
+**Interpretação adotada: leitura A.** As razões:
+
+1. O desafio avalia prática de firmware embarcado. Extensibilidade por tabela de ponteiros
+   de função em memória constante é o padrão idiomático do domínio, e demonstra a
+   competência mais diretamente relevante à vaga.
+2. A leitura B exige um avaliador de expressões definidas pelo usuário e persistência
+   dessas definições — um subsistema de porte comparável ao restante da aplicação. Dentro
+   do prazo disponível, entregá-lo pela metade valeria menos que entregar a leitura A de
+   forma sólida e sinalizar a alternativa com um plano concreto.
+
+**Reconhecimento da leitura alternativa.** O termo "operation type" aparece no requisito
+funcional 5 (*"Users must be able to select the operation type"*) designando o que o
+usuário seleciona, o que dá suporte textual à leitura B. O desenho proposto para
+implementá-la está na seção de implementações futuras.
+
+**Limite honesto do que foi entregue.** A tabela de despacho torna as operações escalares
+intercambiáveis, mas acrescentar uma operação ainda exige edição em três pontos — a
+tabela, o texto do menu e a estrutura de decisão. O menu é texto literal, não derivado da
+tabela, e o determinante ficou fora dela por ter assinatura distinta. A seção de
+limitações conhecidas registra isso.
+
+### Entrada de "array of values"
+
+O requisito funcional 3 traz a ressalva *"(If applicable)"*. A entrada de conjunto de
+valores foi atendida pela captura da matriz do determinante, que exercita leitura
+repetida, validação elemento a elemento e armazenamento em buffer de dimensão escolhida
+pelo usuário.
+
+Uma operação de redução sobre vetor não foi incluída porque reutilizaria integralmente o
+mesmo código de captura, acrescentando pouco em demonstração técnica. O plano para ela
+está nas implementações futuras, com **RMS** como operação escolhida — mesmo custo
+computacional da média aritmética e diretamente pertinente a análise de vibração.
+
+---
+
+## 7. Cobertura dos requisitos
 
 ### Requisitos funcionais
 
@@ -237,14 +287,14 @@ repete o prompt.
 
 | Requisito | Estado |
 |---|---|
-| Criar novos tipos de operação | Parcial — tabela de despacho cobre operações escalares |
+| Criar novos tipos de operação | Parcial — tabela de despacho cobre operações escalares; interpretação e alternativa em "Premissas assumidas" |
 | Log persistente | Atendido — `history.txt` |
 | Determinante com dimensão escolhida pelo usuário | Atendido — `n` de 1 a 10 |
 | Detecção e tratamento de erros de entrada | Atendido — parser blindado e enum de status |
 
 ---
 
-## 7. Testes
+## 8. Testes
 
 `tests/test_math.c` cobre `math_ops` de forma isolada. São 12 casos agrupados em:
 
@@ -262,7 +312,7 @@ build definir `NDEBUG`.
 
 ---
 
-## 8. Limitações conhecidas
+## 9. Limitações conhecidas
 
 Documentadas deliberadamente, em ordem de relevância técnica:
 
@@ -300,7 +350,7 @@ Documentadas deliberadamente, em ordem de relevância técnica:
 
 ---
 
-## 9. Implementações futuras
+## 10. Implementações futuras
 
 **Curto prazo — fecha lacunas dos requisitos**
 
@@ -312,6 +362,17 @@ Documentadas deliberadamente, em ordem de relevância técnica:
   mesmo custo computacional que a média e diretamente pertinente a análise de vibração.
 - Carimbo de tempo ISO-8601 nos registros e log das operações que falharam — uma
   auditoria sem tempo e sem falhas registra apenas metade dos eventos relevantes.
+- Operações definidas pelo usuário em tempo de execução (leitura B do bônus de
+  extensibilidade). Desenho previsto, coerente com as restrições de firmware do projeto:
+  o usuário informa nome e expressão em **notação pós-fixa** sobre os operandos `a` e `b`
+  (por exemplo, `a b * a +`); a expressão é armazenada como vetor de tokens de tamanho
+  fixo em um conjunto estático de slots, sem alocação dinâmica; a avaliação usa uma
+  máquina de pilha com pilha de profundidade fixa, sem recursão; as definições persistem
+  em arquivo próprio, carregado na inicialização. A notação pós-fixa é escolhida sobre a
+  infixa deliberadamente — dispensa parser com precedência de operadores e mantém a
+  avaliação auditável e de profundidade limitada, prioridades mais altas neste contexto
+  que a conveniência de digitação. Este item pressupõe o primeiro do bloco, já que o menu
+  precisa ser gerado a partir da tabela para exibir operações criadas pelo usuário.
 
 **Médio prazo — robustez numérica e de contrato**
 
@@ -334,7 +395,7 @@ Documentadas deliberadamente, em ordem de relevância técnica:
 
 ---
 
-## 10. Estrutura do projeto
+## 11. Estrutura do projeto
 
 ```
 hmi-calculator-challenge/
