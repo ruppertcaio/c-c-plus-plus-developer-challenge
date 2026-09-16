@@ -286,6 +286,17 @@ Documentadas deliberadamente, em ordem de relevância técnica:
    uma matriz.
 7. **`hmi_read_int()` e `hmi_read_double()` não são `static`.** São usadas apenas dentro
    de `hmi.c` e deveriam ter ligação interna.
+8. **Contrato inconsistente para `n = 1`.** `math_determinant()` retorna antes da
+   verificação de pivô quando a matriz é 1×1. Uma matriz `[0]` devolve `MATH_OK` com
+   determinante nulo, enquanto uma 2×2 nula devolve `MATH_ERR_SINGULAR_MATRIX`. O mesmo
+   fato matemático produz códigos diferentes conforme a dimensão — e, por consequência,
+   o caso 1×1 entra no log e o 2×2 não.
+9. **Overflow não é detectado.** Não existe `MATH_ERR_OVERFLOW` na enum. `math_add(1e308,
+   1e308)` e `math_mul(1e200, 1e200)` retornam `MATH_OK` com `inf`, que é impresso e
+   registrado como se fosse resultado válido.
+10. **O caminho do log é relativo ao diretório de trabalho.** `history.txt` é criado onde
+    o processo foi iniciado, não junto do executável. Executar a aplicação de outro
+    diretório gera um arquivo de auditoria separado.
 
 ---
 
@@ -309,6 +320,7 @@ Documentadas deliberadamente, em ordem de relevância técnica:
 - Contrato explícito de buffer de trabalho em `math_determinant()`.
 - Para `n` grande, acumular `log|pivô|` e sinal em vez do produto direto dos pivôs,
   evitando overflow e underflow.
+- Detecção de overflow e underflow nas operações escalares, com código de status próprio.
 
 **Longo prazo — qualidade de processo**
 

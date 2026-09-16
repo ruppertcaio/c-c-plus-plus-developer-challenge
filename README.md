@@ -8,7 +8,7 @@ With our proficiency in signal processing for vibration and acoustics, we delive
 
 ## Challenges
 
-- [ ] [01 - Dynamox HMI Calculator Challenge](./hmi-calculator-challenge/README.md)
+- [x] [01 - Dynamox HMI Calculator Challenge](./hmi-calculator-challenge/README.md)
 - [ ] [02 - Dynamox Packetizer Challenge](./packetizer-challenge/README.md) 
   
 
